@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Північ: сказання</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#18212b;--panel:#222e3a;--ink:#e4ecf0;--dim:#8fa1ad;--gold:#d2a94f;--blood:#b8443b;--ice:#6fa8c4;--line:#34444f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#18212b}}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.5 "IM Fell English",Georgia,serif;min-height:100vh}
+main{max-width:520px;margin:0 auto;padding:14px}
+h1{font-size:28px;margin:6px 0 2px;font-weight:400;letter-spacing:.5px}
+.sub{color:var(--dim);font-style:italic;margin:0 0 14px}
+.bars{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;font-size:15px;color:var(--dim)}
+.bar{height:8px;background:#121920;border-radius:4px;margin:4px 0 8px;overflow:hidden}
+.bar i{display:block;height:100%;transition:width .3s}
+#hp{background:var(--blood)}#xp{background:var(--ice)}
+#log{background:var(--panel);border-left:3px solid var(--gold);padding:10px 12px;min-height:150px;max-height:36vh;overflow-y:auto;margin-bottom:12px;border-radius:0 6px 6px 0}
+#log p{margin:0 0 8px}
+#log p.bad{color:#e08a82}#log p.good{color:#e6c877}#log p.shout{color:var(--ice)}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 8px;min-height:48px;cursor:pointer}
+button:active{background:#2c3b49}
+button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button:disabled{opacity:.4}
+button.main{border-color:var(--gold)}
+.full{grid-column:1/-1}
+.start input{width:100%;font:inherit;padding:12px;background:#121920;color:var(--ink);border:1px solid var(--line);border-radius:6px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<main>
+<h1>Північ: сказання</h1>
+<p class="sub">Ти — драконородний. Світ чекає на твій крик.</p>
+<div id="app"></div>
+</main>
+<script>
+(function(){
+var tg=window.Telegram&&window.Telegram.WebApp;if(tg){try{tg.ready();tg.expand();}catch(e){}}
+var app=document.getElementById('app');
+var S=null,foe=null;
+var KEY='north_rpg_v1';
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function load(){try{var d=localStorage.getItem(KEY);return d?JSON.parse(d):null;}catch(e){return null;}}
+function r(a,b){return a+Math.floor(Math.random()*(b-a+1));}
+var RACES={
+ 'Нордик':{hp:0,dmg:1,txt:'Сильніший у ближньому бою'},
+ 'Імперець':{hp:0,dmg:0,gold:40,txt:'Більше золота на старті'},
+ 'Дунмер':{hp:-10,dmg:0,shout:1,txt:'Крики б’ють сильніше'}};
+var FOES=[
+ {n:'Лісовий вовк',hp:22,d:[3,6],xp:12,g:[2,8]},
+ {n:'Розбійник',hp:30,d:[4,8],xp:18,g:[10,25]},
+ {n:'Драугр',hp:42,d:[5,10],xp:28,g:[15,35]},
+ {n:'Крижаний троль',hp:60,d:[7,12],xp:45,g:[25,50]},
+ {n:'Маг-відступник',hp:50,d:[9,15],xp:60,g:[40,70]},
+ {n:'Крижаний велетень',hp:90,d:[10,16],xp:90,g:[60,100]}];
+var DRAGON={n:'Дракон Алдуїн',hp:140,d:[10,18],xp:200,g:[200,300],boss:1};
+var CL={'Воїн':{hp:30,txt:'+30 здоров’я'},'Маг':{hp:0,txt:'Сильніший крик, швидша перезарядка'},'Злодій':{hp:0,txt:'25% критичних ударів'}};
+var LOCS=[{n:'Сніжний перевал',lv:1,pool:[0,1,2]},{n:'Крижана гробниця',lv:3,pool:[2,3,4]},{n:'Вежа Вітрів',lv:5,pool:[3,4,5]}];
+var DEMO=!(tg&&tg.initData),INV={};/* DEMO=false і INV={s1:'посилання',...} після підключення бота */
+function pay(id,ok){
+ if(!DEMO&&tg&&tg.openInvoice){fetch(location.origin+'/invoice?item='+id).then(function(x){return x.json();}).then(function(d){if(!d.link){say('Не вдалося створити рахунок.','bad');return town();}tg.openInvoice(d.link,function(s){if(s==='paid'){ok();say('Дякуємо за покупку!','good');}town();});}).catch(function(){say('Сервер недоступний.','bad');town();});return;}
+ if(DEMO){ok();say('(Тестовий режим: покупку видано безкоштовно.)');return town();}
+ say('Покупки будуть доступні найближчим часом.','bad');town();
+}
+function pickClass(){app.innerHTML='<div class="start"><p>Обери шлях:</p><div class="acts" id="cl"></div></div>';var c=document.getElementById('cl');Object.keys(CL).forEach(function(k){var b=document.createElement('button');b.innerHTML=k+'<br><small style="color:var(--dim)">'+CL[k].txt+'</small>';b.onclick=function(){S.cls=k;S.hp=maxHp();save();town();};c.appendChild(b);});}
+function maxHp(){return 80+S.lvl*20+(RACES[S.race].hp||0)+(CL[S.cls]?CL[S.cls].hp:0)+(S.pt?10:0);}
+function wpn(){return 5+S.sword*3+S.lvl+(RACES[S.race].dmg||0)*2+(S.pt?3:0);}
+function start(){
+ app.innerHTML='<div class="start"><p>Назви себе та обери походження:</p><input id="nm" maxlength="16" placeholder="Ім’я героя"><div class="acts" id="rc"></div></div>';
+ var rc=document.getElementById('rc');
+ Object.keys(RACES).forEach(function(k){var b=document.createElement('button');b.innerHTML=k+'<br><small style="color:var(--dim)">'+RACES[k].txt+'</small>';b.onclick=function(){
+  var n=document.getElementById('nm').value.trim()||'Безіменний';
+  S={name:n,race:k,lvl:1,xp:0,hp:100,gold:20+(RACES[k].gold||0),pot:2,sword:0,kills:0,dragon:0,log:['Ти прокинувся біля розбитого воза. Попереду — сніжний перевал, позаду — нічого. Нова легенда починається.'],cd:0};
+  S.arm=0;S.loc=0;S.q=null;S.aff={};pickClass();};rc.appendChild(b);});
+}
+function head(){
+ var m=maxHp(),need=S.lvl*50;
+ return '<div class="bars"><div class="row"><span>'+S.name+' · '+S.race+' · рівень '+S.lvl+'</span><span>🪙 '+S.gold+'</span></div>'+
+ '<div class="row"><span>Здоров’я</span><span>'+Math.max(0,S.hp)+' / '+m+'</span></div><div class="bar"><i id="hp" style="width:'+Math.max(0,S.hp/m*100)+'%"></i></div>'+
+ '<div class="row"><span>Досвід</span><span>'+S.xp+' / '+need+'</span></div><div class="bar"><i id="xp" style="width:'+Math.min(100,S.xp/need*100)+'%"></i></div>'+
+ '<div class="row"><span>Зілля: '+S.pot+' · Меч +'+S.sword+' · Броня +'+S.arm+'</span><span>📍 '+LOCS[S.loc].n+'</span></div></div>';
+}
+function logHtml(){return '<div id="log">'+S.log.slice(-30).map(function(l){var c='';if(typeof l==='object'){c=l.c;l=l.t;}return '<p class="'+c+'">'+l+'</p>';}).join('')+'</div>';}
+function say(t,c){S.log.push(c?{t:t,c:c}:t);}
+function scroll(){var l=document.getElementById('log');if(l)l.scrollTop=l.scrollHeight;}
+function btn(t,id,cls,dis){return '<button class="'+(cls||'')+'" data-a="'+id+'"'+(dis?' disabled':'')+'>'+t+'</button>';}
+function bind(){var bs=app.querySelectorAll('button[data-a]');for(var i=0;i<bs.length;i++)bs[i].onclick=function(){ACT[this.getAttribute('data-a')]();};scroll();}
+function town(){
+ foe=null;
+ app.innerHTML=head()+logHtml()+'<div class="acts">'+
+  btn('🌲 Дослідити пустку','explore','main')+
+  btn('🏠 Відпочити в таверні (15🪙)','rest')+
+  btn('⚗️ Купити зілля (20🪙)','buyPot')+
+  btn('⚔️ Покращити меч ('+(40+S.sword*40)+'🪙)','upg')+
+  btn('🛡 Броня ('+(50+S.arm*50)+'🪙)','armor')+
+  btn('📜 Дошка завдань'+(S.q?' ('+S.q.have+'/'+S.q.need+')':''),'quest')+
+  btn('🗺 Мандрувати','travel')+
+  btn('⭐ Крамниця Stars','shop')+
+  btn('💞 Компаньйони 18+','comp','full')+
+  (S.lvl>=3&&!S.dragon?btn('🐉 Піднятися на Гору Крику','boss','main full'):'')+
+  btn('🔄 Почати заново','reset','full')+'</div>';
+ bind();save();
+}
+function fight(){
+ var m=maxHp();
+ app.innerHTML=head()+logHtml()+'<div class="bars"><div class="row"><span>'+foe.n+'</span><span>'+Math.max(0,foe.hp)+' / '+foe.max+'</span></div><div class="bar"><i style="background:var(--gold);width:'+Math.max(0,foe.hp/foe.max*100)+'%"></i></div></div><div class="acts">'+
+  btn('🗡 Удар','hit','main')+
+  btn('🗣 Крик «FUS» '+(S.cd>0?'('+S.cd+')':''),'shout','',S.cd>0)+
+  btn('⚗️ Випити зілля ('+S.pot+')','drink','',S.pot<1)+
+  btn('🏃 Тікати','flee')+'</div>';
+ bind();
+}
+function foeTurn(){
+ if(foe.hp<=0)return win();
+ var d=Math.max(1,r(foe.d[0],foe.d[1])-S.arm*2);S.hp-=d;say(foe.n+' б’є тебе на '+d+'.','bad');
+ if(S.cd>0)S.cd--;
+ if(S.hp<=0)return lose();
+ fight();
+}
+function win(){
+ var g=r(foe.g[0],foe.g[1]);S.gold+=g;S.xp+=foe.xp;S.kills++;if(S.q&&S.q.have<S.q.need){S.q.have++;if(S.q.have>=S.q.need)say('Завдання виконано! Повернись до дошки за нагородою.','good');}
+ say(foe.n+' переможений. +'+g+'🪙, +'+foe.xp+' досвіду.','good');
+ if(foe.boss){S.dragon=1;say('Дракон падає, а його сила тече в тебе. Ти — Довакін. Легенда справдилась!','good');ending();}
+ while(S.xp>=S.lvl*50){S.xp-=S.lvl*50;S.lvl++;S.hp=maxHp();say('Новий рівень: '+S.lvl+'! Здоров’я відновлено.','good');}
+ if(Math.random()<.3){S.pot++;say('Серед здобичі знайдено зілля.','good');}
+ S.cd=0;town();
+}
+function lose(){
+ var lost=Math.floor(S.gold/2);S.gold-=lost;S.hp=Math.floor(maxHp()/2);
+ say('Темрява поглинає тебе. Ти приходиш до тями в таверні. Втрачено '+lost+'🪙.','bad');town();
+}
+var ACT={
+ explore:function(){
+  if(S.hp<maxHp()*.25){say('Ти надто слабкий. Спершу відпочинь.');return town();}
+  var roll=Math.random();
+  if(roll<.2){var g=r(5,20);S.gold+=g;say('Серед каміння ти знаходиш скриню: '+g+'🪙.','good');return town();}
+  if(roll<.28){S.pot++;say('Старий мандрівник дарує тобі зілля.','good');return town();}
+  var pool=LOCS[S.loc].pool.map(function(i){return FOES[i];});
+  var f=pool[r(0,pool.length-1)];
+  foe={n:f.n,hp:f.hp+S.lvl*3,max:f.hp+S.lvl*3,d:f.d,xp:f.xp,g:f.g};
+  say('З’являється: '+foe.n+'!');fight();
+ },
+ hit:function(){var d=r(wpn(),wpn()+8),cr=S.cls==='Злодій'&&Math.random()<.25;if(cr)d*=2;foe.hp-=d;say((cr?'Критичний удар! ':'')+'Ти завдаєш '+d+' шкоди.');foeTurn();},
+ shout:function(){var d=r(18,28)+(RACES[S.race].shout?10:0)+(S.cls==='Маг'?12:0);foe.hp-=d;S.cd=S.cls==='Маг'?2:3;say('«FUS RO DAH!» Крик завдає '+d+' шкоди.','shout');foeTurn();},
+ drink:function(){S.pot--;S.hp=Math.min(maxHp(),S.hp+50);say('Ти п’єш зілля: +50 здоров’я.','good');foeTurn();},
+ flee:function(){
+  if(foe.boss){say('Від дракона не втекти.','bad');return foeTurn();}
+  if(Math.random()<.55){say('Ти втік від бою.');S.cd=0;return town();}
+  say('Втекти не вдалось!','bad');foeTurn();
+ },
+ rest:function(){
+  if(S.gold<15){say('Недостатньо золота для кімнати.','bad');return town();}
+  S.gold-=15;S.hp=maxHp();say('Ти виспався біля вогнища. Здоров’я відновлено.','good');town();
+ },
+ buyPot:function(){
+  if(S.gold<20){say('Недостатньо золота.','bad');return town();}
+  S.gold-=20;S.pot++;say('Ти купив зілля.');town();
+ },
+ upg:function(){
+  var c=40+S.sword*40;
+  if(S.gold<c){say('Коваль просить '+c+'🪙.','bad');return town();}
+  S.gold-=c;S.sword++;say('Коваль гострить клинок. Меч +'+S.sword+'.','good');town();
+ },
+ boss:function(){
+  foe={n:DRAGON.n,hp:DRAGON.hp,max:DRAGON.hp,d:DRAGON.d,xp:DRAGON.xp,g:DRAGON.g,boss:1};
+  say('Небо розривається. Дракон Алдуїн сідає на вершину і дивиться на тебе.','bad');fight();
+ },
+ reset:function(){try{localStorage.removeItem(KEY);}catch(e){}start();},
+ travel:function(){var n=S.loc,i,k;for(i=1;i<=LOCS.length;i++){k=(S.loc+i)%LOCS.length;if(LOCS[k].lv<=S.lvl){n=k;break;}}S.loc=n;say('Ти вирушаєш: '+LOCS[n].n+'. Нові рівні відкривають нові землі.');town();},
+ quest:function(){var q=S.q;if(!q){S.q={need:3+S.lvl,have:0,rew:40+S.lvl*20};say('Ярл наказує здолати ворогів: '+S.q.need+'. Нагорода: '+S.q.rew+'🪙.');}else if(q.have>=q.need){S.gold+=q.rew;S.xp+=q.rew/2;say('Ярл вручає нагороду: +'+q.rew+'🪙.','good');S.q=null;}else say('Завдання: '+q.have+' з '+q.need+' ворогів.');town();},
+ armor:function(){var c=50+S.arm*50;if(S.arm>=5){say('Броня вже найкраща.');return town();}if(S.gold<c){say('Броня коштує '+c+'🪙.','bad');return town();}S.gold-=c;S.arm++;say('Нова броня +'+S.arm+'. Кожен удар слабший на 2.','good');town();},
+ shop:function(){app.innerHTML=head()+logHtml()+'<div class="acts">'+btn('⚗️ 5 зіль — 15 ⭐','s1')+btn('🪙 200 золота — 25 ⭐','s2')+btn('🗡 Меч +2 — 50 ⭐','s3')+btn('↩️ Назад','back')+'</div>';bind();},
+ s1:function(){pay('s1',function(){S.pot+=5;say('Куплено 5 зіль.','good');});},
+ s2:function(){pay('s2',function(){S.gold+=200;say('Отримано 200🪙.','good');});},
+ s3:function(){pay('s3',function(){S.sword+=2;say('Меч посилено: +'+S.sword+'.','good');});},
+ back:function(){town();}
+};
+var COMP=[{n:'Лідія',l:['Лідія хмикає: «Б’єшся ти краще, ніж торгуєшся».','Лідія тихо сміється, гострячи клинок біля вогню.','Лідія стає ближче, ніж потрібно, щоб перевірити твою броню.']},{n:'Елара',l:['Елара дивиться на тебе довше, ніж зазвичай, і ховає усмішку в книзі.','Елара шепоче заклинання тепла і накриває твої плечі плащем.','Елара розповідає про зорі, а ти ловиш себе на тому, що слухаєш не слова.']},{n:'Каель',l:['Каель підморгує: «Тримайся поруч, і вовки тебе не дістануть».','Каель ділиться з тобою останнім шматком хліба й жартом.','Каель сидить так близько, що ви ділите одне тепло від вогню.']}];
+function add(i,v){S.ms=S.ms||{};var a=S.aff[i]=Math.min(100,(S.aff[i]||0)+v),m=S.ms[i]||0,c=COMP[i].n;
+ if(a>=40&&m<1){S.ms[i]=1;say(c+' ловить твій погляд. Біля багаття ви опиняєтесь надто близько, і поцілунок виходить сам собою.','shout');}
+ if(a>=100&&m<2){S.ms[i]=2;say('Двері кімнати над таверною зачиняються за вами.','shout');S.pend=i+1;if(!S.pt){S.pt=i+1;say(c+' тепер твій союзник у битвах: +3 шкоди, +10 здоров’я.','good');}}}
+COMP[0].s=['Лідія торкається твоєї щоки мозолистою долонею: «Я не звикла довіряти. Але тобі — так». Ви стоїте чолом до чола, доки тремтить полум’я.','Лідія сміється вголос: «Нахаба». Вона гасить світло першою, а ти ловиш її усмішку в темряві.'];
+COMP[0].m='Вранці Лідія мовчки ділиться з тобою хлібом і каже, що вперше за роки спала без меча під рукою.';
+COMP[1].s=['Елара шепоче заклинання, і кімната наповнюється м’яким світлом, схожим на північне сяйво. «Лишайся, поки воно не згасне».','Елара червоніє: «Ти нестерпний». Але її пальці вже торкаються твоїх, а на стелі спалахують блакитні зорі.'];
+COMP[1].m='Вранці Елара показує тобі свій зошит із закляттями і вперше дозволяє його читати.';
+COMP[2].s=['Каель довго мовчить, а потім тихо каже: «Я все життя ловив звірів. Тебе ловити не довелось». Він обіймає тебе, і зникає холод.','Каель підморгує: «Я хоч і мисливець, але здаюсь одразу». Він гасить лампу, і ніч стає теплою.'];
+COMP[2].m='Вранці Каель плете тобі оберіг із пір’я й каже, що за тебе нікому не поступиться.';
+var DL=[[['Лідія чистить клинок і не дивиться на тебе: «Чому ти пішов цим шляхом?»','Шукав місце, де я потрібен','«Тоді ти його знайшов», — тихо каже Лідія.','Нудьгував удома','Лідія пирскає зі сміху: «Принаймні чесно».'],['Лідія киває на старий шрам: «Хочеш знати, звідки він?»','Хочу знати про тебе все','Вона розповідає про першу битву й уперше не жартує.','Мабуть, від надто гострого язика','Лідія штовхає тебе плечем, ледь стримуючи сміх.']],[['Елара відривається від книги: «Ти не боїшся магії?»','Боюся, але з тобою — ні','Елара опускає очі й ховає усмішку в комірі.','Лише коли вона мене підпалює','Елара ображено цокає язиком, але сміється.'],['Елара дивиться на небо: «Вірити в долю — це наївно?»','Ні, ми зустрілись недарма','Вона довго мовчить, а потім бере тебе за руку.','Наївно, але мені подобається','Елара сміється й каже, що ти безнадійний.']],[['Каель вдивляється в темряву: «Що ти шукаєш серед цих земель?»','Тебе, здається','Каель на мить забуває про ліс і дивиться тільки на тебе.','Золото й славу','Каель хмикає: «Золото холодне. Ходи до багаття».'],['Каель простягає тобі флягу: «Довіряєш мені?»','Більше, ніж будь-кому','Він киває й піднімає флягу, мов тост.','Спершу понюхаю','Каель сміється: «Мудро. Але даремно».']]];
+ACT.d1=function(){var i=S.dlg-1,d=DL[i][S.dq];S.dlg=0;say(d[2]);add(i,9);save();ACT.comp();};
+ACT.d2=function(){var i=S.dlg-1,d=DL[i][S.dq];S.dlg=0;say(d[4]);add(i,r(1,14));save();ACT.comp();};
+function jeal(i){for(var j=0;j<COMP.length;j++){if(j!==i&&(S.ms||{})[j]>=1&&Math.random()<.5){S.aff[j]=Math.max(0,(S.aff[j]||0)-4);say(COMP[j].n+' бачить, як ти проводиш час із '+COMP[i].n+', і мовчки відвертається.','bad');}}}
+var _add=add;add=function(i,v){_add(i,v);jeal(i);};
+function ending(){var E=['Епілог: ти йдеш на південь сам, а в тавернах ще довго співають про Довакіна, якому нікого було не потрібно. Чи справді?','Епілог: Лідія стає командиркою твоєї варти. Вона досі гасить свічки першою.','Епілог: Елара відкриває вежу, де вчить дітей читати північне сяйво. Ти — її перший і вічний слухач.','Епілог: ви з Каелем ставите хату під Горою Крику. Вовки сюди вже не підходять.'];say(E[S.pt||0],'good');say('Кінець першої частини. Світ ще чекає на тебе.','shout');}
+function fin(k){var p=S.pend-1,c=COMP[p];S.pend=0;say(c.s[k]);say('Свічка гасне, і решта ночі лишається між вами.','shout');say(c.m,'good');save();ACT.comp();}
+ACT.c1=function(){fin(0);};ACT.c2=function(){fin(1);};
+ACT.y18=function(){S.adult=true;save();ACT.comp();};
+ACT.n18=function(){S.adult=false;say('Розділ компаньйонів закрито: він лише для дорослих.');town();};
+ACT.comp=function(){if(S.adult===undefined){app.innerHTML=head()+logHtml()+'<div class="bars"><p>Цей розділ містить романтичні теми для дорослих (18+). Тобі вже є 18 років?</p></div><div class="acts">'+btn('Так, мені є 18','y18','main')+btn('Ні','n18')+'</div>';bind();return;}if(!S.adult){say('Розділ компаньйонів недоступний: потрібен вік 18+.','bad');return town();}if(S.pend){var p=S.pend-1;app.innerHTML=head()+logHtml()+'<div class="bars"><p>'+COMP[p].n+' дивиться на тебе в тиші кімнати. Що скажеш?</p></div><div class="acts">'+btn('💬 Ніжно: «Я тут»','c1')+btn('😏 Жартома: «Ти довго збиралась»','c2')+'</div>';bind();return;}if(S.dlg){var d=DL[S.dlg-1][S.dq];app.innerHTML=head()+logHtml()+'<div class="bars"><p>'+d[0]+'</p></div><div class="acts">'+btn('💬 '+d[1],'d1')+btn('😏 '+d[3],'d2')+'</div>';bind();return;}var h='';COMP.forEach(function(c,i){h+=btn('💬 '+c.n+' · '+(S.aff[i]||0)+'/100','t'+i)+btn('🎁 Подарунок (30🪙)','g'+i);});app.innerHTML=head()+logHtml()+'<div class="acts">'+h+btn('↩️ Назад','back','full')+'</div>';bind();};
+COMP.forEach(function(c,i){
+ ACT['t'+i]=function(){S.tk=S.tk||{};if(S.tk[i]===S.kills){say(c.n+' зайнята. Повертайся після нової вилазки.');}else{S.tk[i]=S.kills;S.dlg=i+1;S.dq=r(0,1);}save();ACT.comp();};
+ ACT['g'+i]=function(){if(S.gold<30){say('Для подарунка потрібно 30🪙.','bad');}else{S.gold-=30;say(c.n+' приймає подарунок і посміхається саме тобі.','good');add(i,15);}save();ACT.comp();};
+});
+S=load();if(S){S.aff=S.aff||{};S.arm=S.arm||0;S.cls=S.cls||'Воїн';S.loc=S.loc||0;S.q=S.q||null;}
+if(S&&S.name){town();}else{start();}
+})();
+</script>
+</body>
+</html>
